@@ -1,6 +1,6 @@
 # Skycua
 
-Skycua is a computer user agent project that can be used in local system using docker.
+Skycua is a computer use agent project that can be used in local system using docker.
 
 ## System Components
 
@@ -27,6 +27,11 @@ sequenceDiagram
     OpenAI->>Backend: Returns analysis/response
     Backend->>Client: Returns final response
 ```
+
+### Repos
+- [Debian Docker](https://github.com/ratnadeep007/skycua-machine)
+- [Backend](https://github.com/ratnadeep007/skycua-be)
+- [Frontend](https://github.com/ratnadeep007/skycua-fe)
 
 ### 1. Frontend Application (skycua-fe)
 

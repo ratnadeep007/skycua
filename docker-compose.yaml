@@ -1,0 +1,79 @@
+version: '3'
+
+services:
+  vm:
+    image: ghcr.io/ratnadeep007/ubuntu-desktop-novnc:latest
+    container_name: ubuntu-desktop-test
+    ports:
+      - "5901:5901"   # VNC port
+      - "6901:6901"   # noVNC port
+      - "2222:22"     # SSH port
+      - "9998:9998"   # server port
+    environment:
+      - VNC_PW=vncpassword
+      - VNC_RESOLUTION=1280x720
+      - DISPLAY=:1
+    volumes:
+      - ./shared:/home/vncuser/shared  # Optional: shared folder if you want to have anything shared to vm
+      - screenshots_volume:/home/vncuser/screenshots
+    networks:
+      - skycua-network
+    restart: unless-stopped
+    shm_size: '4gb'
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; s1=socket.socket(); s1.settimeout(1); s1.connect(('localhost', 22)); s1.close(); s2=socket.socket(); s2.settimeout(1); s2.connect(('localhost', 6901)); s2.close(); print('Services ready')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G 
+
+  server:
+    image: ghcr.io/ratnadeep007/skycua-be:latest
+    container_name: skycua-server
+    ports:
+      - "8000:8000"   # server port
+    environment:
+      - FE_VM_HOST=localhost
+      - SCREENSHOT_DIR=/app/screenshots/
+      - VM_HOST=vm
+      - SSH_PORT=22
+      - VNC_PASSWORD=vncuser
+      - VNC_USER=vncuser
+      - VNC_PORT=6901
+      - STREAM_PORT=9998
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - screenshots_volume:/app/screenshots       # Shared volume for vm to write, server to read
+    networks:
+      - skycua-network
+    depends_on:
+      vm:
+        condition: service_healthy
+    restart: unless-stopped
+  
+  fontend:
+    image: ghcr.io/ratnadeep007/skycua-fe:latest
+    container_name: skycua-fe
+    ports:
+      - "9990:80"
+    networks:
+      - skycua-network
+    depends_on:
+      vm:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+volumes:  
+  screenshots_volume:
+
+networks:
+  skycua-network:
+    driver: bridge

@@ -1,0 +1,136 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests paramiko
+
+    - name: Install Docker Compose
+      run: |
+        DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+        mkdir -p $DOCKER_CONFIG/cli-plugins
+        curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+        chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+        docker compose version
+
+    - name: Pull Docker images
+      run: docker compose pull
+
+    - name: Start services
+      run: |
+        docker compose up -d
+        # Wait for services to be ready
+        sleep 60
+
+    - name: Create health check script
+      run: |
+        cat > health_check.py << 'EOF'
+        import requests
+        import paramiko
+        import socket
+        import time
+        import sys
+        from urllib.parse import urlparse
+
+        def check_url(url, max_retries=3, delay=5):
+            print(f"Checking {url}...")
+            for i in range(max_retries):
+                try:
+                    response = requests.get(url, timeout=10)
+                    if response.status_code == 200:
+                        print(f"✅ {url} is healthy (200)")
+                        return True
+                    else:
+                        print(f"❌ {url} returned status code {response.status_code}")
+                except Exception as e:
+                    print(f"❌ Attempt {i+1}/{max_retries} failed for {url}: {str(e)}")
+                if i < max_retries - 1:
+                    time.sleep(delay)
+            return False
+
+        def check_ssh(host, port, username, password, max_retries=3, delay=5):
+            print(f"Checking SSH {host}:{port}...")
+            for i in range(max_retries):
+                try:
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(
+                        hostname=host,
+                        port=port,
+                        username=username,
+                        password=password,
+                        timeout=10
+                    )
+                    ssh.close()
+                    print(f"✅ SSH {host}:{port} is healthy")
+                    return True
+                except (paramiko.SSHException, socket.error) as e:
+                    print(f"❌ Attempt {i+1}/{max_retries} failed for SSH {host}:{port}: {str(e)}")
+                if i < max_retries - 1:
+                    time.sleep(delay)
+            return False
+
+        # List of HTTP services to check
+        http_services = [
+            "http://localhost:9990",  # Frontend
+            "http://localhost:8000",  # Backend API
+            "http://localhost:6901",  # noVNC
+            "http://localhost:9998",  # Stream server
+        ]
+
+        # SSH service configuration
+        ssh_config = {
+            "host": "localhost",
+            "port": 2222,
+            "username": "vncuser",
+            "password": "vncuser"
+        }
+
+        failed = False
+
+        # Check HTTP services
+        for service in http_services:
+            if not check_url(service):
+                failed = True
+
+        # Check SSH service
+        if not check_ssh(**ssh_config):
+            failed = True
+
+        sys.exit(1 if failed else 0)
+        EOF
+
+    - name: Run health checks
+      run: python health_check.py
+
+    - name: Check container logs on failure
+      if: failure()
+      run: |
+        echo "Docker Compose Logs:"
+        docker compose logs
+
+    - name: Stop services
+      if: always()
+      run: docker compose down 

@@ -6,7 +6,7 @@ Skycua is a computer use agent project that can be used in local system using do
 
 ### Demo
 
-https://user-images.githubusercontent.com/ratnadeep007/skycua/assets/demo.mp4?raw=true
+[Demo Video](https://drive.google.com/file/d/1DTAECMnA3wUz9j-DVJUOqz2fe8RspXsL/view?usp=sharing)
 
 ### Architecture
 
